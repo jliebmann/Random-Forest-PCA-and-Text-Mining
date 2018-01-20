@@ -1,0 +1,744 @@
+---
+title: "Homework 4"
+author:
+- Jason Liebmann
+- Nicole Berkman
+- Saurav Bose
+date: "11/27/2017"
+output:
+  html_document:
+    code_folding: show
+    highlight: haddock
+    theme: lumen
+    number_sections: yes
+    self_contained: yes
+    toc: yes
+    toc_depth: 4
+header-includes:
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyfoot[CO,CE]{}
+- \fancyfoot[LE,RO]{\thepage}
+subtitle: Due on Monday Dec. 3, by 11:59 PM
+graphics: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#put libraries here
+library(gridExtra)
+library(grid)
+library(randomForest)
+library(tree)
+library(rpart)
+library(partykit)
+library(tm) # major text mining package
+library(SnowballC)
+library(car)
+library(dplyr)
+library(RColorBrewer)
+library(wordcloud)
+library(glmnet)
+library(RTextTools)
+```
+
+#Problem 1: Conceptual Building Blocks for Decision Trees
+##Question 1
+1) A small data set is generated and it is stored in data2. It consists of four variables 
+
+Y1: a continuous response
+Y2: a binary response and 
+X1, X2 two continuous explanatory variables.
+
+Run the following r-chunk to generate data2:
+```{r}
+set.seed(1)
+x.temp <- ceiling(runif(40, min=0, max=100))
+data1<- matrix(x.temp,ncol=2, byrow=TRUE )
+y <- round(rexp(nrow(data1), rate=2), 2)
+data1 <- data.frame(data1, y)
+names(data1)  <- c("X1", "X2", "Y1")
+
+data2 <- data1
+set.seed(1)
+data2$Y2 <- ifelse((data1$X1+data1$X2 > 70), rbinom(1,1,.62), rbinom(1,1, .31))
+```
+
+Look at the data to see what’s there: (Make sure it matches the plot in the appendix.)
+```{r}
+summary(data2)
+#names(data2)
+```
+
+##Question 2
+
+A diagram is drawn to partition X1 and X2 into R1, … R6 regions by using the following R chunk.
+```{r}
+#### Get a diagram in two dimensions with 6 Regions R_1 to R_6
+
+# Set up an empty plot
+plot(NA, NA, type = "n", xlim = c(0,100), ylim = c(0,100), xlab = "X1", ylab = "X2")
+# Draw some horizontal and vertical lines to divide the space into 6 regions
+lines(x = c(40,40), y = c(0,100))
+lines(x = c(0,40), y = c(75,75))
+lines(x = c(75,75), y = c(0,100))
+lines(x = c(20,20), y = c(0,75))
+lines(x = c(75,100), y = c(25,25))
+# Label the regions
+text(x = (40+75)/2, y = 50, labels = c("R1"))
+text(x = 20, y = (100+75)/2, labels = c("R2"))
+text(x = (75+100)/2, y = (100+25)/2, labels = c("R3"))
+text(x = (75+100)/2, y = 25/2, labels = c("R4"))
+text(x = 30, y = 75/2, labels = c("R5"))
+text(x = 10, y = 75/2, labels = c("R6"))
+# Plot the points
+points(data2$X1, data2$X2, pch = 16, col='red')
+```
+
+###Is this a top-down, recursive tree?
+
+Yes, this is a top-down, recursive tree because we are splitting the data into sections step by step meaning we first split at one value, then split the sections after and so on. 
+
+Use this tree with data2 as the training data. Give the following predicted values of Y1 on the end nodes using X1 and X2:
+###Predicted Y1 for x1=60, x2=30.
+```{r}
+data2 %>% filter(X1 >= 40 & X1 <= 75) %>% summarise(mean(Y1)) %>% unlist()
+```
+Values of X1=60 and X2=30 put us in Region 1, so our predicted value for Y1 would be the mean Y1 for that region.
+Our predicted value: $Y1 = 0.48375$
+
+###Predicted Y1 for x1=90, x2=10.
+```{r}
+data2 %>% filter(X1 >= 75 & X2 <= 25) %>% summarise(mean(Y1)) %>% unlist()
+
+```
+Values of X1=90 and X2=10 put us in Region 4, so our predicted value for Y1 would be the mean Y1 for that region.
+Our predicted value: $Y1 = 0.07$
+
+
+
+##Question 3
+3) Use tree() to produce a best decision tree for Y1. Display the tree. Is this tree very different from the decision tree given in the diagram above? 
+```{r}
+fit3 <- tree(Y1~X1+X2, data2)
+plot(fit3)
+text(fit3, pretty=0)   # add the split variables
+title("Regression Tree: Y1 ~ X1 + X2")
+```
+
+This tree is pretty different from the decision tree in the diagram in question 2, as this tree depends only on the variable X2. By looking at the plot above, we note that the predicted values are not that similar.
+
+
+##Question 4
+4) Let us now concentrate on classification decision trees. The event of interests is Y2=1. 
+
+###Overlay the labels Y2 for each subject in the original tree of the appendix. 
+```{r}
+# Set up an empty plot
+plot(NA, NA, type = "n", xlim = c(0,100), ylim = c(0,100), xlab = "X1", ylab = "X2")
+# Draw some horizontal and vertical lines to divide the space into 6 regions
+lines(x = c(40,40), y = c(0,100))
+lines(x = c(0,40), y = c(75,75))
+lines(x = c(75,75), y = c(0,100))
+lines(x = c(20,20), y = c(0,75))
+lines(x = c(75,100), y = c(25,25))
+# Label the regions
+text(x = (40+75)/2, y = 50, labels = c("R1"))
+text(x = 20, y = (100+75)/2, labels = c("R2"))
+text(x = (75+100)/2, y = (100+25)/2, labels = c("R3"))
+text(x = (75+100)/2, y = 25/2, labels = c("R4"))
+text(x = 30, y = 75/2, labels = c("R5"))
+text(x = 10, y = 75/2, labels = c("R6"))
+# Now plot the points
+points(data2$X1, data2$X2, pch = as.character(data2$Y2), col='red')
+```
+
+Data2 will be again the training data and we use sample proportion to estimate the probability of Y2=1 in each region. 
+
+###Predicted Prob(Y2=1) for x1=60, x2=30.
+```{r}
+data2 %>% filter(X1 >= 40 & X1 <= 75) %>% summarise(sum(Y2 == 1) /  n()) %>% unlist()
+```
+$Prob(Y2=1) = 0.75$
+
+###Give Y2’s label for x1=60, x2=30 by majority vote. 
+Since $Prob(Y2=1) > 0.5$, we would label Y2 for x1=60, x2=30 to be $1$.
+
+##Question 5
+5) Apply rpart() by default to produce a decision classification tree and plot it. Is this tree different from our original tree? 
+```{r}
+fit.rp <- rpart(as.factor(Y2)~X1+X2, data2)
+fit.rp
+#names(fit.rp)
+summary(fit.rp)
+```
+rpart does produce a different tree than our original decision tree. Here there is only 1 split when $X1 = 64.5$. Our rpart tree is only dependent on X1 compared to the original tree that is dependent on both X1 and X2. See below for a graphical representation of rpart().
+```{r}
+plot(as.party(fit.rp), main="Final Tree with Rpart") # method 3
+```
+
+#Problem 2: Intelligence, Successes
+
+We continue to analyze the IQ.Full.csv. Recall that this data set contains about 2600 individuals from the 1979 National Longitudinal Study of Youth (NLSY79) survey. Those subjects were re-interviewed in 2006, who had paying jobs in 2005, and who had complete values for the variables listed below. 
+
+Personal Demographic Variables: 
+
+ Race 1 = Hispanic, 2 = Black, 3 = Not Hispanic or Black
+ Gender: a factor with levels "female" and "male"
+ Educ: years of education completed by 2006
+ 
+Household Environment: 
+ 
+Imagazine: a variable taking on the value 1 if anyone in the respondent’s household regularly read
+	magazines in 1979, otherwise 0
+Inewspaper: a variable taking on the value 1 if anyone in the respondent’s household regularly read
+	newspapers in 1979, otherwise 0
+Ilibrary: a variable taking on the value 1 if anyone in the respondent’s household had a library card
+	in 1979, otherwise 0
+MotherEd: mother’s years of education
+FatherEd: father’s years of education
+
+Variables Related to ASVAB test Scores in 1981
+
+AFQT: percentile score on the AFQT intelligence test in 1981 
+Coding: score on the Coding Speed test in 1981
+Auto: score on the Automotive and Shop test in 1981
+Mechanic: score on the Mechanic test in 1981
+Elec: score on the Electronics Information test in 1981
+
+Science: score on the General Science test in 1981
+Math: score on the Math test in 1981
+Arith: score on the Arithmetic Reasoning test in 1981
+Word: score on the Word Knowledge Test in 1981
+Parag: score on the Paragraph Comprehension test in 1981
+Numer: score on the Numerical Operations test in 1981
+
+Variable Related to Life Success in 2006
+
+Income2005: total annual income from wages and salary in 2005. We will use a natural log transformation to evaluate this data! 
+
+The following 10 questions are answered as 1: strongly agree, 2: agree, 3: disagree, 4: strongly disagree
+
+Esteem 1: “I am a person of worth”
+Esteem 2: “I have a number of good qualities”
+Esteem 3: “I am inclined to feel like a failure”
+Esteem 4: “I do things as well as others”
+Esteem 5: “I do not have much to be proud of”
+Esteem 6: “I take a positive attitude towards myself and others”
+Esteem 7: “I am satisfied with myself”
+Esteem 8: “I wish I could have more respect for myself”
+Esteem 9: “I feel useless at times”
+Esteem 10: “I think I am no good at all”
+
+This exercise is designed partially for you to understand PCA conceptually. The models suggested might not be the most sensible way to analyze the data from a practical point of view. 
+
+For question 1) and 2): Use a subset of 100 subjects here. Make sure to use set.seed(10) when sampling.
+
+##Question 1
+1) Let us first use PCA to summarize the ASVAB tests. Run prcomp over all the tests in ASVAB. We should center and scale all the tests. 
+
+```{r}
+data.IQ <- read.csv("IQ.Full.csv")
+```
+
+```{r}
+set.seed(10)
+data.ASVAB <- data.IQ[sample(nrow(data.IQ), 100, replace=FALSE), c("Coding", "Auto", "Mechanic", "Elec", "Science", "Math", "Arith", "Word","Parag", "Numer")]
+```
+
+###Report the PC1 and PC2 loadings. Are they unit vectors? Are they uncorrelated?
+
+```{r}
+pc.all <- prcomp(data.ASVAB[, c("Coding", "Auto", "Mechanic", "Elec", "Science", "Math", "Arith", "Word","Parag", "Numer")], scale=TRUE, center = TRUE)
+#names(pc.all)
+#report PC1 and PC2 loadings
+pc.all$rotation[, c("PC1", "PC2")]
+```
+
+```{r}
+#find correlation between the PC1 and PC2 loadings
+cor(pc.all$rotation[, c("PC1")], pc.all$rotation[, c("PC2")])
+```
+
+The PC1 and PC2 loadings are unit vectors since we have the constraint that the sum of the phis must sum to 1, otherwise we would not get the propoer solution. In theory, the PC1 and PC2 loadings are uncorrelated. From our data, as shown by their correlation of 0.1591812, which is pretty close to 0, we can see that the PC1 and PC2 loadings are slightly correlated but are pretty much uncorrelated.
+
+###How is the PC1 score obtained for each subject? Write down the correction.
+
+The PC1 score for each subject is obtained by taking the value of that score and subtracting the mean score for that subject. Then we divide that value by the standard deviation of the scores for that subject. This allows us to center and scale the score for each subject. Then, we search all angles for the direction with the most variance, given the squares of the phis sum to one. Then, we create a linear combination of the phi's and scores for each subject and sum them to get the PC1 score obtained for each subject. In our case, each of the subject variables are multipled by the corresponding PC1 loading to get the PC1 scores, for example the Coding score is multiplied by -0.2469923 and so on to get the PC1 score. Each person has their own PC1 score.
+
+Z1 = -0.2469923 x Coding - 0.2685842 x Auto - 0.3107010 x Mechanic - 0.3354473 x Elec - 0.3413362 x Science - 0.3244138 x Math - 0.3447845 x Arith - 0.3427313 x Word - 0.3231527 x Parag - 0.3086645 x Numer
+
+###Are PC1 scores and PC2 scores in the data uncorrelated? 
+
+```{r}
+#pc.all$x[, c("PC1","PC2")]
+cor(pc.all$x[, c("PC1")], pc.all$x[, c("PC2")])
+```
+
+The PC1 and the PC2 scores are uncorrelated as shown by their correlation of -1.988844e-16, which is essentially 0.
+
+###Plot PVE (Proportion of Variance Explained) with an explanation.
+
+```{r}
+plot(summary(pc.all)$importance[2, ], pch=16, col="red",
+     ylab="PVE",
+     xlab="Number of PC's",
+     main="Scree Plot of PCA with all 9 scores ")
+#summary(pc.all)$importance[2, ]
+```
+
+This graph shows us how much of the variance is explained by each PC. So for example, PC1 explains about 63.7% of the variance and PC2 explains about 13.3% of additional variance and so on.
+
+###Also plot CPVE (Cumulative Proportion of Variance Explained). What proportion of the variance in the data is explained by the first two principal components?
+
+```{r}
+plot(summary(pc.all)$importance[3, ], pch=16,
+     ylab="Cummulative PVE",
+     xlab="Number of PC's",
+     main="scree plot of PCA with all 9 scores ")
+#summary(pc.all)$importance[3, ]
+```
+
+The first two principle components explain approximately 77% of the variance in the data.
+
+###PC’s provide us with a low dimensional view of the ASVAB. Use a biplot to display the data, using the first two principal components. Give an interpretation from the plot.
+
+```{r}
+biplot(pc.all, ylim=c(-.3, .3), 
+       xlim=c(-.3, .3),
+       main="BiPlot of PC1 and PC2")
+abline(v=0, h=0, lwd=3, col="blue")
+```
+
+Each of the black numbers is a specific person's PC scores and if you project them back onto the each of the vectors, you will get the person's centered and scaled score for that subject. Each of the arrows represent the vector for the subject and the angle between the vectors shows you how correlated the subject scores are. For example, Coding and Auto are the most uncorrelted, while the Mechanic and Auto scores are pretty correlated. Also, since all of the arrows have approximately the same length, the varaince for the test scores in each subject are comparable. The farther the person's point/number is to the left of the graph, it means they did overall better on the exams and the farther they are to the right means that they overall did worse. The higher the person's point is on the graph, the better they did in the subjects that have upward facing vectors (the subjects with positive PC2 loadings) such as Coding, Parag, Numer and the lower the person's point on the plot, the better they did on the downward facing vectors (the subjects with negative PC2 loadings) such as Science, Mechanic and Auto. Finally, the farther a person's point is in the specific direction of one of the vectors, the better the person did in the specific subject. For example, based on the plot person 1853 had a really good and we can see this is true in the data as that person recieved a score of 84 on coding.
+
+
+###Repeat the above biplot but label points with different colors, according to their Gender. Do you see a systematic separation between Male and Female in the biplot? Write a brief summary about your findings.
+
+```{r}
+#prop.table(table(data.IQ$Gender))  # almost 50/50 among gender
+plot(pc.all$x[, 1], pc.all$x[, 2], col=data.IQ$Gender,
+     xlim=c(-10, 10), ylim=c(-10, 10),
+     xlab="PC1", ylab="PC2")
+abline(v=0, h=0)
+#text(pca.all$x[, 1], pca.all$x[, 2], labels=rownames(data1), cex= .7, pos=1) 
+legend("bottomright", legend=c(as.character(levels(data.IQ$Gender))),
+       lty=c(1,1), lwd=c(2,2), col=data.IQ$Gender)
+```
+As seen in the plot above, the red and black circles are pretty much evenly distributed throughout the biplot so there does not seem to be that much separation between the two genders based on the above biplot. One thing to potentially notice is that of the males who did better overall, (those with low PC1 scores), seemed to do better on the Coding, Parag, Word, Math and Numer scores.
+
+##Question 2
+2) We next will try to summarize the 10 Esteem measurement by PCA
+
+###First, notice that Esteem 1, 2, 4, 6, and 7 need to be reversed prior to scoring in order for a higher score to designate higher self-esteem.
+
+```{r}
+#flip values of Esteem 1, 2, 4, 6, 7
+data.IQ$Esteem1 <- 5 - data.IQ$Esteem1
+data.IQ$Esteem2 <- 5 - data.IQ$Esteem2
+data.IQ$Esteem4 <- 5 - data.IQ$Esteem4
+data.IQ$Esteem6 <- 5 - data.IQ$Esteem6
+data.IQ$Esteem7 <- 5 - data.IQ$Esteem7
+```
+
+```{r}
+set.seed(10)
+data.esteem <- data.IQ[sample(nrow(data.IQ), 100, replace=FALSE), c("Esteem1", "Esteem2", "Esteem3", "Esteem4", "Esteem5", "Esteem6", "Esteem7", "Esteem8", "Esteem9", "Esteem10")]
+```
+
+###What are the PC1 loadings?
+
+```{r}
+pc.esteem <- prcomp(data.esteem[, c("Esteem1", "Esteem2", "Esteem3", "Esteem4", "Esteem5", "Esteem6", "Esteem7", "Esteem8", "Esteem9", "Esteem10")], scale=TRUE, center = TRUE)
+#names(pc.all)
+#report PC1 and PC2 loadings
+pc.esteem$rotation[, c("PC1", "PC2")]
+```
+
+###How much variance is explained by using the PC1? Provide both PVE and CPVE plots.
+
+```{r}
+#PVE plot
+pve.esteem <- plot(summary(pc.esteem)$importance[2, ], pch=16, col="red",
+     ylab="PVE",
+     xlab="Number of PC's",
+     main="Scree Plot of PCA with all 10 scores ")
+#summary(pc.esteem)$importance[2, ]
+```
+
+```{r}
+cpve.esteem <- plot(summary(pc.esteem)$importance[3, ], pch=16,
+     ylab="Cummulative PVE",
+     xlab="Number of PC's",
+     main="scree plot of PCA with all 10 scores ")
+#summary(pc.esteem)$importance[3, ]
+```
+
+Looking at both the PVE and CPVE plots, about 47.8% of the variance in explained by using the PC1.
+
+###Combine c) and the biplot of the PC1 and PC2 write a brief summary about Esteem scores. 
+
+```{r}
+biplot(pc.esteem, ylim=c(-.3, .3), xlim=c(-.3, .3),
+       main="BiPlot of PC1 and PC2")
+abline(v=0, h=0, lwd=3, col="blue")
+```
+
+
+As we can see from the PVE plot, each PC explains less of the variance which makes sense. From the CPVE plot, we can see that if we use the first 7 PC scores for each person, then we can explain over 90% of the variance. Each of the arrows represent the vector for the subject and the angle between the vectors shows you how correlated the esteem scores are. For example, Esteem 2 and 9 are the most uncorrelted, while the Esteem 1, 2 and 4 scores are pretty correlated. Also, since all of the arrows have approximately the same length, the varaince for the scores for each esteem number/question are comparable. Esteem 8 has a slightly shorter arrow so that variable has a slightly smaller variance than the others. The farther the person's point/number is to the left of the graph, if means they had overall hgiher esteem and the farther they are to the right means that the had overall lower esteem. For example, person 623 probably has pretty high self-esteem scores for all the questions and as we can see in the data that person has scores of 4 on all esteem questions except 1. The higher the person's point on the plot means they had higher esteem scores for esteem 1, 2 and 4 (the esteems with positive PC2 loadings) and the lower the person's point on the plot means they had hgiher esteem scores for esteem 3, 5, 6, 7, 8, 9, and 10 (the remaining esteem questions and the esteems with negative PC2 loadings). Finally, the farther a person's point is in the specific direction of one of the vectors, the higher the esteem score for that person when answering that specific question. For example, based on the plot we would expect person 2296 to have a high esteem score for quesiton 1,2 and 4 and a low socre for question 9, and we can see in the data this is true since the person has a score of 4 for esteem 1, 2 and 4 and a score of 2 for esteem 9.
+
+Note: To reverse the esteem score, you may try this. Say data.esteem has all the 10 esteem scores.  
+data.esteem[,  c(1, 2, 4, 6, 7)]  <- 5- data.esteem[,  c(1, 2, 4, 6, 7)] 
+
+##Question 3
+3) How well can we predict ‘success’ based on Intelligence? 
+
+To answer this question, we use Income <- log(Income2005) as a measure of one’s success.
+###Why is it important to create a logarithmic transformation of income?
+
+```{r}
+data.IQ$Income2005 <- log(data.IQ$Income2005)
+```
+
+It is important to create a logarithmic transformation of income because income is one of those variables that naturally has a long tail to the right when we plot its distirbution (since a few people earn a lot of money while most earn a moderate to low amount) so we create a logarithmic transformation of the variable to make its distribution more normal.
+
+###Run prcomp over ASVAB tests first.
+
+```{r}
+pc.all.whole.data <- prcomp(data.IQ[, c("Coding", "Auto", "Mechanic", "Elec", "Science", "Math", "Arith", "Word","Parag", "Numer")], scale=TRUE, center = TRUE)
+#pc.all.whole.data$rotation[, c("PC1", "PC2")]
+```
+
+###fit1: Income ~ PC1; fit2: Income ~ PC1+PC2+PC3. Notice the LS estimates of PC1 in both fit1 and fit2 are identical. Why is this so? Are the leading PC’s of ASVAB significant variables to predict Income? (You may use the elbow rule to determine how many PCs are to be included in fit2. In the scree plot of CPVE, take the leading PC’s when there is a sharp change in the plot.)
+
+```{r}
+#pc.all.whole.data$x[, c("PC1", "PC2")]
+data.IQ <- cbind(data.IQ, pc.all.whole.data$x[, c("PC1", "PC2", "PC3")])
+fit1 <- lm(Income2005~PC1, data.IQ)
+#summary(fit1)
+Anova(fit1)
+```
+
+```{r}
+fit2 <- lm(Income2005~PC1 + PC2 + PC3, data.IQ)
+#summary(fit2)
+Anova(fit2)
+```
+
+They are the same because the PC loadings and scores are uncorrelated so no matter the other PC predictors you add, you will get the same coefficient for the PCs already in the model. Yes, the leading PC's of ASVAB are significant variables to predict Income in both models at the 0.05 level.
+
+###Controlling for Personal Demographic Variables and Household Environment, are the leading PC’s of ASVAB significant variables to predict Income at .01 level? Give a brief summary of your findings. 
+
+```{r}
+#names(data.IQ)
+fit3 <- lm(Income2005~PC1 + PC2 + PC3 + Race + Gender + Educ + Imagazine + Inewspaper + Ilibrary + MotherEd + FatherEd, data.IQ)
+#summary(fit3)
+Anova(fit3)
+```
+
+No, only PC1 and PC2 are still significant variables to predict Income at the 0.01 level when controlling for personal demographic variables and household environment. PC3 is significant to predict Income at the 0.05 level, but not the 0.01 level.
+
+#Problem 3: Case Study on Yelp Reviews
+3. Case study: Yelp review (for more information check their website: http://www.yelp.com/dataset_challenge)
+
+It is unlikely we will win the $40,000 prize posted but we get to use their data for free. We have done a detailed analysis in our lecture. This exercise is designed for you to get hands on the whole process. 
+
+The goals are 1) Try to identify important words associated with positive ratings and negative ratings. Collectively we have a sentiment analysis.  2) To predict ratings and 3) To get familiar with RTextTools
+
+##Question 1
+1) Take a random sample of 20000 reviews (set.seed(1)) from our original data set. Extract document term matrix for texts to keep words appearing at least 2% of the time among all 20000 documents. Go through the similar process of cleansing as we did in the lecture.
+```{r}
+#Load the data
+#data.all <- read.csv("/Users/sauravbose/Data Science/Data Mining/Lectures/Text Mining/yelp_subset.csv", as.is=TRUE) # Original one 
+data.all <- read.csv("yelp_subset.csv", as.is=TRUE) # 
+
+
+set.seed(1)
+n=nrow(data.all)
+index <- sample(n, 20000)
+
+data <- data.all[index,] # random sample of 20000 records
+
+```
+
+
+```{r}
+# take the text out
+data1.text <- data$text
+#Make corpus which is collection of texts
+mycorpus1 <- Corpus( VectorSource(data1.text))
+#Change to lower case
+mycorpus2 <- tm_map(mycorpus1, content_transformer(tolower))
+# Remove some non-content words 
+mycorpus3<- tm_map(mycorpus2, removeWords, stopwords("english"))
+#Remove punctuations
+mycorpus4 <- tm_map(mycorpus3, removePunctuation)
+#Remove numbers 
+mycorpus5 <- tm_map(mycorpus4, removeNumbers)
+# Stem words
+mycorpus6 <- tm_map(mycorpus4, stemDocument)  
+
+
+#Get word frequency matrix
+dtm1 <- DocumentTermMatrix( mycorpus6 ) 
+#Threshold to include words appearing atleast 2% of the time
+threshold <- .02*length(mycorpus6) 
+words.10 <- findFreqTerms(dtm1, lowfreq=threshold)
+
+dtm.10<- DocumentTermMatrix(mycorpus6, control=list(dictionary = words.10))  
+dtm.10
+
+#as.matrix(dtm.10)[100,405]
+#colnames(as.matrix(dtm.10))[405]
+```
+
+###Briefly explain what does this matrix record? What is the cell number at row 100 and column 405? What does it represent?
+
+The document term matrix has the words in the vocabulary (dictionary) as the features and the observations (reviews) as the rows. Each entry in the matrix is the frequency of occurence of a particular word in a particular review. The cell number at row 100 and column 405 is 0. This represents that the 100th observation(review) does not have the 405th word (beer). 
+
+###What is the sparsity of the dtm obtained here? What does that mean?
+
+The sparcity of dtm obtained here is 95%. This means that 95% of the entries in the document term matrix are zeroes. 
+
+
+##Question 2
+2) Set the stars as a two category response variable called rating to be “1” = 5,4 and “0”= 1,2,3. Combine the variable rating with the dtm as a data frame called data2. Get a training data with 15000 reviews and the rest 5000 reserved as the testing data.
+
+```{r}
+rating <-  ifelse(data$star>=4,1,0)
+data2 <- data.frame(rating,as.matrix(dtm.10) )
+
+set.seed(1)
+n=nrow(data2)
+test.index <- sample(n, 5000)
+data2.test <- data2[test.index, ] 
+data2.train <- data2[-test.index, ]
+```
+
+
+##Question 3
+3) Use the training data to get Lasso fit. Choose lambda.1se. Keep the result here.
+
+
+```{r, warning=FALSE}
+#LASSO fit
+set.seed(1)
+X1 <- sparse.model.matrix(rating~., data=data2.train)[, -1]
+y <- data2.train$rating
+result.lasso.1 <- cv.glmnet(X1, y, alpha=.99, family="binomial")  # 1.5 minutes in my MAC
+plot(result.lasso.1)
+```
+
+
+```{r, warning=FALSE}
+set.seed(1)
+beta.lasso <- coef(result.lasso.1, s="lambda.1se")   # output lasso estimates
+beta <- beta.lasso[which(beta.lasso !=0),] # non zero beta's
+beta <- as.matrix(beta);
+beta <- rownames(beta)
+
+# input the words from LASSO into glm
+glm.input <- as.formula(paste("rating", "~", paste(beta[-1],collapse = "+"))) # prepare the formulae
+result.glm <- glm(glm.input, family=binomial, data2.train ) 
+#result.glm
+```
+
+##Question 4
+4) Feed the output from Lasso above, get a logistic regression. 
+
+```{r, warning=FALSE}
+# input the words from LASSO into glm
+glm.input <- as.formula(paste("rating", "~", paste(beta[-1],collapse = "+"))) # prepare the formulae
+result.glm <- glm(glm.input, family=binomial, data2.train ) 
+```
+
+###Pull out all the positive coefficients and the corresponding words. Rank the coefficients in a decreasing order. Report the leading 2 words and the coefficients. Describe briefly the interpretation for those two coefficients.
+
+
+```{r, warning=FALSE}
+set.seed(1)
+result.glm.coef <- coef(result.glm)
+good.glm <- result.glm.coef[which(result.glm.coef > 0)]
+
+cor.special <- brewer.pal(8,"Dark2")  # set up a pretty color scheme
+good.fre <- sort(good.glm, decreasing = TRUE) # sort the coef's
+round(good.fre, 4)[1:2]
+```
+
+The leading 2 words and their coefficients are shown above. The more positive the coefficient of the fit, the greater is the correlation of the word with a higher rating. From the above we can see that although documents with either the word excel or fantast or both have a high probability of being a high rating review, a document with the word excel is more likely to be rated high as compared to a document with the word fantast. Mathematically the coefficient of excel being 1.032 means that if the word excel is present in the document, the log odds of it being rated highly positive (4 or 5 star) goes up by 1.032. Similarly, the coefficient of fantast being 1.002 means that if the word fantast is present in the document, the log odds of it being rated highly positive (4 or 5 star) goes up by 1.002 (lower than excel).
+
+
+###Make a word cloud with the top 100 positive words according to their coefficients. Interpret the cloud briefly.
+
+```{r, fig.width=5, fig.height= 5, warning=FALSE}
+good.word <- names(good.fre)  # good words with a decreasing order in the coeff's
+
+wordcloud(good.word[1:100], good.fre[1:100],  # make a word cloud
+          colors=cor.special, ordered.colors=F)
+
+```
+
+The larger the font size of the word in the cloud, the more likely it is for the document containing the word to be rated highly positive (4 or 5 star). From the cloud we see that excel and fantast are the biggest words. This concurs with our model computation above. Some of the other words that tend to appear in positive reviews are amaz, favorit, perfect, awesom, and yum. This makes a lot of intuitive sense as all of these words have a strong positive connotation and hence it is only natural that they would appear in highly positive reviews.
+
+###Repeat i) and ii) for the bag of negative words.
+
+```{r}
+set.seed(1)
+bad.glm <- result.glm.coef[which(result.glm.coef < 0)]
+
+cor.special <- brewer.pal(6,"Dark2")
+bad.fre <- sort(-bad.glm, decreasing = TRUE)
+round(bad.fre, 4)[1:2]
+```
+
+The leading 2 words and their coefficients are shown above. The larger the magnitude of the negative coefficient of the fit, the greater is the correlation of the word with a lower rating (1,2 or 3 stars) or equivalently, lower is the correlation of the word with a high rating (4 or 5 stars). From the above we can see that although documents with either the word mediocr or worst or both have a high probability of being a low rating review, a document with the word mediocr is more likely to be rated low as compared to a document with the word worst. Mathematically the coefficient of mediocr being -1.7195 means that if the word mediocr is present in the document, the log odds of it being rated highly positive (4 or 5 star) goes down by 1.7195. Similarly, the coefficient of worst being -1.5562 means that if the word worst is present in the document, the log odds of it being rated highly positive (4 or 5 star) goes down by 1.5562 (goes down less than worst).
+
+
+```{r, warning=FALSE}
+bad.word <- names(bad.fre)
+wordcloud(bad.word[1:100], bad.fre[1:100], 
+          color=cor.special, ordered.colors=F)
+```
+
+
+
+###Summarize the findings.
+
+The larger the font size of the word in the cloud, the more likely it is for the document containing the word to be rated low (1, 2 or 3 star). From the cloud we see that mediocr and worst are the biggest words. This concurs with our model computation above. Some of the other words that tend to appear in bad reviews are overpr and terribl, bland and rude.
+
+##Question 5
+5) Using majority votes find the testing errors
+###From Lasso fit in 3)
+
+```{r}
+set.seed(1)
+#LASSO testing error
+predict.lasso <- predict(result.lasso.1, as.matrix(data2.test[, -1]), type = "class", s="lambda.1se")
+  # output majority vote labels
+
+# LASSO testing errors
+mean(data2.test$rating != predict.lasso) 
+
+```
+
+The testing error for LASSO is 0.2054
+
+
+###From logistic regression in 4)
+
+```{r}
+set.seed(1)
+#Logistic Regression testing error
+
+predict.glm <- predict(result.glm, data2.test, type = "response")
+class.glm <- rep("0", 5000)
+class.glm[predict.glm > .5] ="1"
+
+testerror.glm <- mean(data2.test$rating != class.glm)
+testerror.glm   # mis classification error is 0.19
+
+```
+
+###Which one is smaller?
+
+The testing error for Logistic Regression is 0.2058 which is slightly larger than for LASSO.
+
+
+##Question 6
+6) Now we will apply RTextTools using the same Training and Testing data as we have reserved.  Run:
+###Logistic Reg. Is the testing error obtained here same as the one we got in 5) ii)?
+```{r}
+#Using RTextTools
+set.seed(1)
+data_combined <- rbind(data2.train,data2.test)
+data_combined$rating <- as.factor(data_combined$rating)
+
+data_comb_matrix <- as.matrix(data_combined[,-1])
+rating <- data_combined$rating
+
+n1 <- 15000
+N <- 20000
+container <- create_container(data_comb_matrix, 
+                           labels=rating,
+                           trainSize = 1:n1,
+                           testSize = (n1+1):N,
+                           virgin=FALSE)
+
+
+#Logistic Regression
+
+model_glmnet <- train_model(container, "GLMNET")
+
+glmnet_out <- classify_model(container, model_glmnet) # prediction
+
+glmnet_mce <- mean(rating[(n1+1):N] != glmnet_out[, 1])
+glmnet_mce    # this would be glm with all words... 
+
+```
+
+The misclassification error on the test set using Logistic Regression here is `r glmnet_mce`. This is similar but slightly greater than  what was obtained in part 5.
+
+###RF. Get the testing error
+```{r}
+set.seed(1)
+model_RF <- train_model(container, "RF")   # 
+RF_out <- classify_model(container, model_RF) # prediction
+
+# MCE 
+RF_mce <- mean(rating[(n1+1):N] != RF_out[, 1])
+RF_mce   
+```
+
+The misclassification error on the test set using Random Forest is `r RF_mce`.
+
+###SVM. Get the testing error  
+
+```{r}
+set.seed(1)
+#SVM
+
+model_SVM <- train_model(container, "SVM")   # 
+SVM_out <- classify_model(container, model_SVM) # prediction
+
+# MCE 
+SVM_mce <- mean(rating[(n1+1):N] != SVM_out[, 1])
+SVM_mce
+```
+
+The misclassification error on the test set using SVM is `r SVM_mce`.
+
+
+###Boosting. Get the testing error
+
+```{r}
+set.seed(1)
+# BOOSTING
+
+model_BOOSTING <- train_model(container, "BOOSTING")   # 
+BOOSTING_out <- classify_model(container, model_BOOSTING) # prediction
+
+
+# MCE 
+BOOSTING_mce <- mean(rating[(n1+1):N] != BOOSTING_out[, 1])
+BOOSTING_mce
+```
+
+The misclassification error on the test set using Boosting is `r BOOSTING_mce`.
+
+
+####Which classifier(s) seem to produce the least testing error? Are you surprised?
+
+The misclassification error for Random Forest is the lowest. This is actually not surprising because our dataset has a lot of sparse features. This makes feature selection very important for good accuracy. Random Forests are great at feature selection as each decision tree in the RF is a random subset of features and only the most important features are used for decision criterion at each node. 
+
+##Question 7
+7) For the purpose of prediction, comment on how would you predict a rating if you are given a review using our final model? 
+
+Given a review, first we would have to subject it to the same preprocessing procedures we employed for model development. That is, first we need to convert it to lower case, remove stop words, punctuations and numbers and stem the words. Then we need to convert it to bag of words model vector with all the words in the vocabulary as the features and the presence of a certain word in the review marked as 1 the absence marked as 0. This sparse vector can now be used to make a prediction on using our final model, LASSO (which has the least misclassification error of all models tried). The prediction would be 1 indicating a high rating (4 or 5 stars) or 0 indicating a low rating (1,2 or 3 stars).
+
+
+
+
+
+
+
+
